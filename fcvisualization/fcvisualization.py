@@ -19,6 +19,144 @@ from dash.exceptions import PreventUpdate
 from plotly.subplots import make_subplots
 from plotly.tools import DEFAULT_PLOTLY_COLORS
 
+import scanpy as sc
+import plotly.express as px
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+
+def plot_umap(adata, color_key, title_text):
+    """
+    Creates a Plotly scatter figure for an AnnData object that already
+    has 'X_umap' in adata.obsm and a color_key in adata.obs.
+    """
+    if adata is None:
+        print("[Warning] plot_umap called with adata=None.")
+        return go.Figure()
+
+    if "X_umap" not in adata.obsm:
+        print("[Warning] 'X_umap' not found in adata.obsm. No UMAP results to plot.")
+        return go.Figure()
+
+    if color_key not in adata.obs.columns:
+        print(f"[Warning] color_key='{color_key}' not in adata.obs.columns.")
+        return go.Figure()
+
+    # Create the Plotly scatter plot
+    fig = px.scatter(
+        x=adata.obsm["X_umap"][:, 0],
+        y=adata.obsm["X_umap"][:, 1],
+        color=adata.obs[color_key].astype(str),
+        title=title_text,
+        labels={"x": "UMAP-1", "y": "UMAP-2", "color": color_key}
+    )
+    return fig
+
+def assign_colors(categories):
+    """Assigns a unique color to each category."""
+    unique_categories = categories.unique()
+    color_map = {cat: f"rgb({np.random.randint(0,255)},{np.random.randint(0,255)},{np.random.randint(0,255)})"
+                 for cat in unique_categories}
+    return categories.map(color_map)
+
+
+def plot_umap_four_in_one(adata_raw, adata_corrected, batch_key, celltype_key):
+    """
+    Make a 2x2 subplot figure:
+      Row 1: raw batch (left), corrected batch (right)
+      Row 2: raw celltype (left), corrected celltype (right)
+
+    Each subplot uses multiple traces so you get a discrete legend per category,
+    and the same category color is used across raw/corrected for consistency.
+    """
+
+    fig = make_subplots(
+        rows=2, cols=2,
+        horizontal_spacing=0.07,
+        vertical_spacing=0.12,
+        subplot_titles=(
+            "Raw (Batch)", "Corrected (Batch)",
+            "Raw (Celltype)", "Corrected (Celltype)"
+        )
+    )
+
+    # -- 1) Collect the union of batch categories from raw + corrected
+    batch_categories = set()
+    if adata_raw is not None and batch_key in adata_raw.obs:
+        batch_categories.update(adata_raw.obs[batch_key].unique())
+    if adata_corrected is not None and batch_key in adata_corrected.obs:
+        batch_categories.update(adata_corrected.obs[batch_key].unique())
+
+    # Build a color map for each batch category
+    # (If you want a consistent ordering, define or use a known palette instead of random.)
+    batch_color_map = {}
+    for cat in sorted(batch_categories):
+        batch_color_map[cat] = f"rgb({np.random.randint(0,255)},{np.random.randint(0,255)},{np.random.randint(0,255)})"
+
+    # -- 2) Collect the union of celltype categories from raw + corrected
+    cell_categories = set()
+    if adata_raw is not None and celltype_key in adata_raw.obs:
+        cell_categories.update(adata_raw.obs[celltype_key].unique())
+    if adata_corrected is not None and celltype_key in adata_corrected.obs:
+        cell_categories.update(adata_corrected.obs[celltype_key].unique())
+
+    # Build a color map for each celltype category
+    celltype_color_map = {}
+    for cat in sorted(cell_categories):
+        celltype_color_map[cat] = f"rgb({np.random.randint(0,255)},{np.random.randint(0,255)},{np.random.randint(0,255)})"
+
+    # Helper to add multiple traces (one per category) in a subplot
+    def add_discrete_traces(adata, obs_key, color_map, row, col, subplot_name):
+        if adata is None:
+            return
+        if obs_key not in adata.obs or "X_umap" not in adata.obsm:
+            return
+
+        # For each category in this color_map, check if adata actually has any points
+        # in that category. If yes, we add a trace.
+        for cat, color in color_map.items():
+            mask = (adata.obs[obs_key] == cat)
+            if not np.any(mask):
+                # This category doesn't exist in the dataset, skip
+                continue
+
+            scatter = go.Scatter(
+                x=adata.obsm["X_umap"][mask, 0],
+                y=adata.obsm["X_umap"][mask, 1],
+                mode="markers",
+                marker=dict(color=color, size=5),
+                name=f"{subplot_name}: {cat}",
+                legendgroup=subplot_name
+            )
+            fig.add_trace(scatter, row=row, col=col)
+
+    # 1) Raw (Batch) => (row=1, col=1)
+    add_discrete_traces(adata_raw, batch_key, batch_color_map, 1, 1, "Raw-Batch")
+
+    # 2) Corrected (Batch) => (row=1, col=2)
+    add_discrete_traces(adata_corrected, batch_key, batch_color_map, 1, 2, "Corr-Batch")
+
+    # 3) Raw (Celltype) => (row=2, col=1)
+    add_discrete_traces(adata_raw, celltype_key, celltype_color_map, 2, 1, "Raw-Cell")
+
+    # 4) Corrected (Celltype) => (row=2, col=2)
+    add_discrete_traces(adata_corrected, celltype_key, celltype_color_map, 2, 2, "Corr-Cell")
+
+    # Hide axis lines + ticks for a clean look
+    for r in [1, 2]:
+        for c in [1, 2]:
+            fig.update_xaxes(visible=False, showgrid=False, zeroline=False, row=r, col=c)
+            fig.update_yaxes(visible=False, showgrid=False, zeroline=False, row=r, col=c)
+
+    # Make subplots more "square" shaped
+    fig.update_layout(
+        width=800,
+        height=800,
+        margin=dict(l=20, r=20, t=80, b=20),
+        title="Raw vs. Corrected UMAPs",
+        showlegend=True  # we want the legend
+    )
+    return fig
+
 
 class fcvisualization:
 
@@ -56,6 +194,16 @@ class fcvisualization:
         self.env = ''
         self.extra_content = []
         self.path_prefix = ''
+
+        # Will hold raw and corrected data after we load them
+        self.adata_raw_path = ''
+        self.adata_corrected_path = ''
+        self.adata_raw = None
+        self.adata_corrected = None
+
+        # You can customize these if your .obs columns differ:
+        self.batch_key = 'batch'
+        self.celltype_key = 'cell_type'
 
     def start(self, env, path_prefix, callback_fn, extra_content=[]):
         def run_fc():
@@ -117,8 +265,10 @@ class fcvisualization:
         # process config.yml if there is any
         config_file_path = self.data_dir + '/config.yml'
         try:
+            print(config_file_path)
             with open(config_file_path) as f:
                 config = yaml.load(f, Loader=yaml.FullLoader)
+                print(config)
                 if 'fc-cluster-visualization-app' in config:
                     config = config['fc-cluster-visualization-app']
                     if 'self.delimiter' in config:
@@ -178,6 +328,24 @@ class fcvisualization:
                             self.download_dir = os.path.join(self.output_dir, config['download-dir'])
                         else:
                             self.download_dir = config['download-dir']
+
+                    # Check for UMAP configs
+                    if 'raw_adata-file' in config:
+                        if self.env == 'fc':
+                            self.adata_raw_path = os.path.join(self.base_dir_fc_env, config['raw_adata-file'])
+                        else:
+                            self.adata_raw_path = config['raw_adata-file']
+                    if 'corrected_adata-file' in config:
+                        if self.env == 'fc':
+                            self.adata_corrected_path = os.path.join(self.base_dir_fc_env,
+                                                                     config['corrected_adata-file'])
+                        else:
+                            self.adata_corrected_path = config['corrected_adata-file']
+                    if 'batch_key' in config:
+                        self.batch_key = config['batch_key']
+                    if 'celltype_key' in config:
+                        self.celltype_key = config['celltype_key']
+
         except IOError:
             print('No config file found, will work with default values.')
 
@@ -198,13 +366,18 @@ class fcvisualization:
         print(f'volcano_data_path={self.volcano_data_path}')
         print(f'download_dir={self.download_dir}')
         print(f'Current directory is: {os.getcwd()}')
+        print(f'adata_raw_path={self.adata_raw_path}')
+        print(f'adata_corrected_path={self.adata_corrected_path}')
+        print(f'batch_key={self.batch_key}')
+        print(f'celltype_key={self.celltype_key}')
+
 
     def assemble_dataframes(self):
         print('Assembling dataframes')
         self.dataframes_by_k_value = []
         if not os.path.isdir(self.data_dir):
             self.data_errors += "Data folder is missing."
-
+        self.load_and_preprocess_scrna()
         local_data_present = True
         try:
             base_df = pd.read_csv(self.local_data_path, delimiter=self.delimiter, skiprows=0)
@@ -316,6 +489,53 @@ class fcvisualization:
             )
             self.data_errors += "Error: Clustering information is missing or corrupt.\n"
 
+    def load_and_preprocess_scrna(self):
+        """
+        Loads raw and corrected .h5ad data if they exist, then performs
+        a minimal pipeline to ensure X_umap is present.
+        """
+        if not os.path.exists(self.adata_raw_path) and not os.path.exists(self.adata_corrected_path):
+            print("No .h5ad files found for scRNA. Skipping UMAP loading.")
+            return
+
+        # If raw exists, load & preprocess
+        if os.path.exists(self.adata_raw_path):
+            try:
+                adata = sc.read_h5ad(self.adata_raw_path)
+                # minimal pipeline if needed
+                if "X_umap" not in adata.obsm:
+                    sc.pp.neighbors(adata, n_neighbors=15, n_pcs=40)
+                    sc.tl.umap(adata)
+                # self.adata_raw = self.numeric_encoding(adata)
+                self.adata_raw = adata
+                print("Loaded raw scRNA data successfully.")
+                print(f"unique cell types counts in raw data: {adata.obs[self.celltype_key].nunique()}")
+            except Exception as e:
+                print(f"Failed to load raw scRNA data: {e}")
+
+        # If corrected exists, load & preprocess
+        if os.path.exists(self.adata_corrected_path):
+            try:
+                adata = sc.read_h5ad(self.adata_corrected_path)
+                if "X_umap" not in adata.obsm:
+                    sc.pp.neighbors(adata, n_neighbors=15, n_pcs=40)
+                    sc.tl.umap(adata)
+                # self.adata_corrected = self.numeric_encoding(adata)
+                self.adata_corrected = adata
+                print("Loaded corrected scRNA data successfully.")
+            except Exception as e:
+                print(f"Failed to load corrected scRNA data: {e}")
+
+
+    def _scanpy_basic_pipeline(self, adata):
+        """
+        (Optional) If you want more pipeline steps like normalization,
+        you can do them here. Currently minimal.
+        """
+        sc.pp.neighbors(adata, n_neighbors=15, n_pcs=40)
+        sc.tl.umap(adata)
+        return
+
     def create_dash(self, path_prefix):
         app = Dash(__name__,
                    requests_pathname_prefix=path_prefix,
@@ -324,7 +544,7 @@ class fcvisualization:
 
         def serve_layout():
             self.assemble_dataframes()
-            if len(self.dataframes_by_k_value) == 0 and len(self.volcano_df) == 0 and len(self.extra_content) ==0:
+            if len(self.dataframes_by_k_value) == 0 and len(self.volcano_df) == 0 and len(self.extra_content) ==0 and self.adata_raw is None and self.adata_corrected is None:
                 f = open('README.md', 'r')
                 return html.Div([
                     dbc.Row(
@@ -359,6 +579,7 @@ class fcvisualization:
                     dcc.Tab(label='Clustering Quality', value='tab-clustering-quality', style=cluster_quality_style),
                     dcc.Tab(label='Scree plot', value='tab-scree-plot', style=scree_plot_style),
                     dcc.Tab(label='Volcano plot', value='tab-volcano-plot', style=volcano_plot_style),
+                    dcc.Tab(label='UMAP Visualization', value='tab-umap-visualization'),
                 ]
                 if len(self.extra_content) > 0:
                     for tab_ct in self.extra_content:
@@ -428,9 +649,32 @@ class fcvisualization:
                 return self.render_volcano_plot(), show_toast
             elif tab == 'tab-help':
                 return self.render_help(), show_toast
+            elif tab == 'tab-umap-visualization':
+                fig = plot_umap_four_in_one(self.adata_raw, self.adata_corrected, self.batch_key, self.celltype_key)
+                return html.Div([
+                    dcc.Graph(figure=fig)
+                ]), show_toast
+                # Raw + Corrected
+                # figs = []
+                # if self.adata_raw is not None:
+                #     fig_raw_batch = plot_umap(self.adata_raw, self.batch_key, 'Raw UMAP (Batch)')
+                #     fig_raw_cell = plot_umap(self.adata_raw, self.celltype_key, 'Raw UMAP (Celltype)')
+                #
+                #     figs.append(dcc.Graph(figure=fig_raw_batch))
+                #     figs.append(dcc.Graph(figure=fig_raw_cell))
+                #
+                # if self.adata_corrected is not None:
+                #     fig_corr_batch = plot_umap(self.adata_corrected, self.batch_key, 'Corrected UMAP (Batch)')
+                #     fig_corr_cell = plot_umap(self.adata_corrected, self.celltype_key, 'Corrected UMAP (Celltype)')
+                #     figs.append(dcc.Graph(figure=fig_corr_batch))
+                #     figs.append(dcc.Graph(figure=fig_corr_cell))
+                #
+                # if not figs:
+                #     return html.Div("No UMAP data to show (neither raw nor corrected was loaded)."), show_toast
+                #
+                # return html.Div(figs), show_toast
             else:
                 return render_extra_content(tab), show_toast
-
 
         def render_extra_content(hash_id):
             for diagram in self.extra_content:
@@ -982,6 +1226,15 @@ class fcvisualization:
             return fig
 
         return app
+
+        # --------------------- UMAP Visualization Tab ----------------------
+
+    def render_umap_visualization(self):
+        if not self.adata_raw and not self.adata_corrected:
+            return html.Div("No scRNA .h5ad data found to visualize.")
+        fig = plot_umap_four_in_one(self.adata_raw, self.adata_corrected, self.batch_key, self.celltype_key)
+        self.save_fig_as_image(fig)
+        return html.Div([dcc.Graph(figure=fig)])
 
     def save_fig_as_image(self, fig):
         # Save image to download folder to be available for download
