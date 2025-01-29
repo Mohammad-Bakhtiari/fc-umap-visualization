@@ -47,4 +47,7 @@ tqdm==4.64.0
 urllib3==1.26.9
 Werkzeug==2.0.3
 yellowbrick==1.4
+scanpy
+umap-learn
+seaborn
 featurecloud
