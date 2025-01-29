@@ -1,3 +1,15 @@
+# UMAP visualization of scRNA-seq data in .h5ad format
+
+This repository is a **fork** of the FeatureCloud Cluster Visualization App, enhanced to handle `.h5ad` scRNA-seq data. By integrating UMAP functionality, it can read raw and batch-corrected single-cell data, compute or display UMAP embeddings, and visualize them alongside the original clustering/plot tabs included in the app. The goal is to provide an **interactive** environment for comparing raw vs. corrected UMAPs while preserving all the standard feature set of the FeatureCloud cluster visualization framework.
+
+## What This Fork Does
+- **Handles `.h5ad`** single-cell data files containing scRNA-seq information.
+- **Computes or reads** existing UMAP coordinates from your `.h5ad` if needed.
+- **Displays** side-by-side or combined UMAP views for both raw and batch-corrected data.
+- **Retains** the original Confounders, Distances, Clustering Quality, Scree Plot, and Volcano Plot tabs from the base app.
+
+---
+
 # Featurecloud Cluster Visualization app
 This is an interactive cluster visualization app implemented in Dash and Plotly.
 
