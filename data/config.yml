@@ -1,0 +1,6 @@
+fc-cluster-visualization-app:
+  batch_key: 'batch'
+  celltype_key: 'cell_type'
+  raw_adata-file: 'MHSPC.h5ad'
+  corrected_adata-file: corrected.h5ad
+  download-dir: 'downloads'
